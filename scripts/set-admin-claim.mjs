@@ -71,6 +71,7 @@ Attempting default application credentials or serviceAccountKey.json in working 
     if (existsSync(localKeyPath)) {
       console.log(`Loading credentials from local serviceAccountKey.json...`);
       const serviceAccount = JSON.parse(readFileSync(localKeyPath, 'utf8'));
+      console.log(`Target Project ID: ${serviceAccount.project_id || 'unknown'}`);
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
@@ -87,8 +88,20 @@ Please download your service account key from Firebase Console and set:
       }
     }
   } else {
-    console.log(`Using credentials from GOOGLE_APPLICATION_CREDENTIALS...`);
-    admin.initializeApp();
+    console.log(`Using credentials from GOOGLE_APPLICATION_CREDENTIALS: ${credPath}`);
+    try {
+      if (credPath.endsWith('.json')) {
+        const sa = JSON.parse(readFileSync(credPath, 'utf8'));
+        console.log(`Target Project ID: ${sa.project_id || 'unknown'}`);
+        admin.initializeApp({
+          credential: admin.credential.cert(sa)
+        });
+      } else {
+        admin.initializeApp();
+      }
+    } catch {
+      admin.initializeApp();
+    }
   }
 
   // Resolve user by email or UID

@@ -18,7 +18,7 @@ import {
   signInAnonymously, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged, 
+  onIdTokenChanged, 
   User, 
   Auth 
 } from 'firebase/auth';
@@ -138,7 +138,7 @@ export function subscribeToAuthState(
     callback(null, false);
     return () => {};
   }
-  return onAuthStateChanged(auth, async (user) => {
+  return onIdTokenChanged(auth, async (user) => {
     if (user && !user.isAnonymous) {
       const isAdmin = await verifyUserAdminClaim(user);
       callback(user, isAdmin);
