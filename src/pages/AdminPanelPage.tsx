@@ -70,6 +70,7 @@ export const AdminPanelPage: React.FC = () => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [adminUser, setAdminUser] = useState<FirebaseUser | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<'analytics' | 'schemes' | 'searches' | 'feedback'>('analytics');
 
   // Filters for tables
@@ -101,15 +102,17 @@ export const AdminPanelPage: React.FC = () => {
   const [formApplyLink, setFormApplyLink] = useState('');
   const [formHelpline, setFormHelpline] = useState('');
 
-  // Listen to Firebase Auth state for authenticated administrator session
+  // Listen to Firebase Auth state for authenticated administrator session with verified custom claims
   useEffect(() => {
-    const unsubscribe = subscribeToAuthState((user) => {
+    const unsubscribe = subscribeToAuthState((user, isAdmin) => {
       if (user && !user.isAnonymous) {
         setAdminUser(user);
         setIsAuthenticated(true);
+        setIsAdminAuthorized(isAdmin);
       } else {
         setAdminUser(null);
         setIsAuthenticated(false);
+        setIsAdminAuthorized(false);
       }
     });
     return () => unsubscribe();
@@ -132,10 +135,16 @@ export const AdminPanelPage: React.FC = () => {
 
     setIsAuthenticating(true);
     try {
-      const user = await adminSignIn(emailInput.trim(), passwordInput);
+      const { user, isAdmin } = await adminSignIn(emailInput.trim(), passwordInput);
       setAdminUser(user);
       setIsAuthenticated(true);
-      addToast(`Logged in as Administrator (${user.email || 'Admin'})`, 'success');
+      setIsAdminAuthorized(isAdmin);
+
+      if (isAdmin) {
+        addToast(`Logged in as Administrator (${user.email || 'Admin'})`, 'success');
+      } else {
+        addToast('Signed in successfully, but this account lacks administrator custom claims.', 'warning');
+      }
     } catch (err: any) {
       console.error('Admin authentication error:', err);
       let errorMsg = 'Authentication failed. Please verify your administrator credentials.';
@@ -460,6 +469,53 @@ export const AdminPanelPage: React.FC = () => {
             Admin access is authenticated through Firebase Authentication. Administrator accounts must be registered in your Firebase Console project. Client-side authentication bypasses and hardcoded credentials are not permitted.
           </p>
         </div>
+      </div>
+    );
+  }
+
+  // ACCESS RESTRICTED SCREEN IF AUTHENTICATED BUT NOT AUTHORIZED (CUSTOM CLAIM MISSING)
+  if (isAuthenticated && !isAdminAuthorized) {
+    return (
+      <div className="max-w-lg mx-auto my-16 p-8 bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-900/60 shadow-2xl text-left space-y-6">
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-inner">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white font-serif">
+            Access Restricted
+          </h2>
+          <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
+            Administrator Custom Claims Required
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs space-y-2 text-slate-800 dark:text-slate-200">
+          <p>
+            You are signed in as: <strong className="font-mono text-emerald-700 dark:text-emerald-400">{adminUser?.email}</strong>
+          </p>
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+            While your account credentials are valid, this account has not been assigned the <code className="font-mono font-bold text-rose-700 dark:text-rose-300">admin: true</code> custom claim. Ordinary user accounts cannot access administrative telemetry or modify welfare schemes.
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 space-y-2">
+          <p className="font-bold text-slate-800 dark:text-slate-200">How to assign admin privileges:</p>
+          <p className="text-[11px] leading-relaxed">
+            In accordance with security best practices, roles cannot be self-assigned by client code. Run the server provisioning script using the Firebase Admin SDK to grant the claim:
+          </p>
+          <pre className="p-2.5 rounded-xl bg-slate-900 text-emerald-400 text-[10px] font-mono overflow-x-auto">
+            node scripts/set-admin-claim.mjs {adminUser?.email || 'admin@jansahayak.gov.in'}
+          </pre>
+        </div>
+
+        <button
+          onClick={handleLogout}
+          className="w-full py-3 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign Out / Switch Account</span>
+        </button>
       </div>
     );
   }

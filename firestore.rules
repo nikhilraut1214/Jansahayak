@@ -1,44 +1,115 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to verify caller is an authenticated, non-anonymous administrator.
-    // Anonymous visitors have request.auth.token.firebase.sign_in_provider == 'anonymous'.
-    function isNonAnonymousAdmin() {
-      return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
+
+    // =========================================================================
+    // AUTHORIZATION HELPER: Genuine Administrator Verification
+    // =========================================================================
+    // A caller is strictly authorized as an administrator ONLY IF:
+    // 1. request.auth is not null (user is authenticated).
+    // 2. The provider is not anonymous (must be a verified identity).
+    // 3. The token contains the server-assigned custom claim `admin: true`.
+    //
+    // Custom claims cannot be forged by client SDKs and must be assigned
+    // via a privileged server-side process using the Firebase Admin SDK.
+    // =========================================================================
+    function isAuthorizedAdmin() {
+      return request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous'
+          && request.auth.token.admin == true;
     }
 
-    // Feedback collection:
-    // Anonymous visitors can submit feedback (validated schema).
-    // Reading, listing, or deleting feedback is strictly restricted to authenticated administrators.
+    // Helper: Validates that a rating is an integer/number between 1 and 5
+    function isValidRating(r) {
+      return r is number && r >= 1 && r <= 5;
+    }
+
+    // Helper: Validates optional string fields do not exceed maximum character length
+    function isOptionalString(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    // =========================================================================
+    // 1. FEEDBACK COLLECTION
+    // =========================================================================
     match /feedback/{feedbackId} {
+      // Public citizens (anonymous or authenticated) can submit feedback.
+      // Strict abuse and injection controls:
+      // - Required fields: rating, message
+      // - Unknown fields rejected (hasOnly)
+      // - Message bounded (1 to 2000 chars)
+      // - Optional metadata bounded
       allow create: if request.resource.data.keys().hasAll(['rating', 'message'])
-                   && request.resource.data.rating is number
-                   && request.resource.data.rating >= 1 
-                   && request.resource.data.rating <= 5
+                   && request.resource.data.keys().hasOnly([
+                        'rating', 'message', 'category', 'state', 'page',
+                        'name', 'mobile', 'email', 'timestamp', 'createdAt'
+                      ])
+                   && isValidRating(request.resource.data.rating)
                    && request.resource.data.message is string
-                   && request.resource.data.message.size() <= 2000;
-      allow read, delete: if isNonAnonymousAdmin();
+                   && request.resource.data.message.size() >= 1
+                   && request.resource.data.message.size() <= 2000
+                   && isOptionalString(request.resource.data.get('category', null), 50)
+                   && isOptionalString(request.resource.data.get('state', null), 50)
+                   && isOptionalString(request.resource.data.get('page', null), 50)
+                   && isOptionalString(request.resource.data.get('name', null), 100)
+                   && isOptionalString(request.resource.data.get('mobile', null), 20)
+                   && isOptionalString(request.resource.data.get('email', null), 100)
+                   && isOptionalString(request.resource.data.get('timestamp', null), 50);
+
+      // Reading, querying, and deleting strictly requires the verified admin custom claim.
+      // Ordinary authenticated users and anonymous visitors are strictly denied.
+      allow read, delete: if isAuthorizedAdmin();
+
+      // Feedback submissions are immutable; prevent tampering or modification
       allow update: if false;
     }
 
-    // Analytics Events:
-    // Anonymous visitors can record telemetry events.
-    // Reading is strictly restricted to authenticated administrators.
+    // =========================================================================
+    // 2. ANALYTICS EVENTS COLLECTION
+    // =========================================================================
     match /analytics_events/{eventId} {
+      // Public visitors can record telemetry events.
       allow create: if request.resource.data.keys().hasAll(['eventName'])
-                   && request.resource.data.eventName is string;
-      allow read, delete: if isNonAnonymousAdmin();
+                   && request.resource.data.keys().hasOnly([
+                        'eventName', 'details', 'page', 'query', 'timestamp', 'createdAt'
+                      ])
+                   && request.resource.data.eventName is string
+                   && request.resource.data.eventName.size() >= 1
+                   && request.resource.data.eventName.size() <= 100
+                   && isOptionalString(request.resource.data.get('details', null), 5000)
+                   && isOptionalString(request.resource.data.get('page', null), 100)
+                   && isOptionalString(request.resource.data.get('query', null), 200)
+                   && isOptionalString(request.resource.data.get('timestamp', null), 50);
+
+      allow read, delete: if isAuthorizedAdmin();
       allow update: if false;
     }
 
-    // Search Logs:
-    // Anonymous visitors can log search queries.
-    // Reading and deleting is strictly restricted to authenticated administrators.
+    // =========================================================================
+    // 3. SEARCH LOGS COLLECTION
+    // =========================================================================
     match /search_logs/{logId} {
+      // Public visitors can log search queries.
       allow create: if request.resource.data.keys().hasAll(['query'])
-                   && request.resource.data.query is string;
-      allow read, delete: if isNonAnonymousAdmin();
+                   && request.resource.data.keys().hasOnly([
+                        'query', 'resultsCount', 'categoryFilter', 'timestamp', 'createdAt'
+                      ])
+                   && request.resource.data.query is string
+                   && request.resource.data.query.size() >= 1
+                   && request.resource.data.query.size() <= 200
+                   && (request.resource.data.get('resultsCount', 0) is number)
+                   && request.resource.data.get('resultsCount', 0) >= 0
+                   && request.resource.data.get('resultsCount', 0) <= 10000
+                   && isOptionalString(request.resource.data.get('categoryFilter', null), 50)
+                   && isOptionalString(request.resource.data.get('timestamp', null), 50);
+
+      allow read, delete: if isAuthorizedAdmin();
       allow update: if false;
+    }
+
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

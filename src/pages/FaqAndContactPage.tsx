@@ -35,7 +35,7 @@ export const FaqAndContactPage: React.FC = () => {
     },
     {
       q: 'Is my personal or financial data stored on remote servers?',
-      a: 'No. JanSahayak operates 100% client-side. Your demographic choices, income numbers, and saved document checkboxes remain stored inside your own browser local storage (localStorage).'
+      a: 'No. JanSahayak operates client-side for eligibility screening. Your demographic choices, income bracket, and saved document checkboxes remain stored temporarily in your own browser session storage (sessionStorage) and are cleared when you close your browser tab.'
     },
     {
       q: 'What should I do if a benefit rate or subsidy amount changes?',

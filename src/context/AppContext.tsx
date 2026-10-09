@@ -341,9 +341,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let unsubscribeFeedback = () => {};
     let unsubscribeLogs = () => {};
 
-    // Only subscribe to administrative Firestore streams if an authenticated admin is logged in
-    const unsubscribeAuth = subscribeToAuthState((user) => {
-      if (user && !user.isAnonymous) {
+    // Only subscribe to administrative Firestore streams if a verified administrator is logged in
+    const unsubscribeAuth = subscribeToAuthState((user, isAdmin) => {
+      if (user && isAdmin) {
         unsubscribeFeedback = subscribeToFeedback((remoteFeedbacks) => {
           if (remoteFeedbacks && remoteFeedbacks.length > 0) {
             setFeedbackList((prevLocal) => {

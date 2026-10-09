@@ -90,24 +90,63 @@ export async function ensureSilentAuth(): Promise<boolean> {
   }
 }
 
-// Administrator Firebase Authentication helpers
-export async function adminSignIn(email: string, password: string): Promise<User> {
+// Administrator Firebase Authentication helpers with server-side Custom Claims verification
+let cachedAdminStatus = false;
+
+// Verifies whether a Firebase user has the cryptographically signed `admin: true` custom claim
+export async function verifyUserAdminClaim(user: User | null): Promise<boolean> {
+  if (!user || user.isAnonymous) {
+    cachedAdminStatus = false;
+    return false;
+  }
+  try {
+    // Force refresh token to inspect current server-minted claims
+    const tokenResult = await user.getIdTokenResult(true);
+    cachedAdminStatus = tokenResult.claims.admin === true;
+    return cachedAdminStatus;
+  } catch (err) {
+    console.warn('Failed to retrieve token claims for admin verification:', err);
+    cachedAdminStatus = false;
+    return false;
+  }
+}
+
+export function isCachedAdmin(): boolean {
+  return cachedAdminStatus && !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
+}
+
+export async function adminSignIn(
+  email: string, 
+  password: string
+): Promise<{ user: User; isAdmin: boolean }> {
   if (!auth) throw new Error('Firebase Authentication is not initialized');
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
-  return userCredential.user;
+  const isAdmin = await verifyUserAdminClaim(userCredential.user);
+  return { user: userCredential.user, isAdmin };
 }
 
 export async function adminSignOut(): Promise<void> {
+  cachedAdminStatus = false;
   if (!auth) return;
   await signOut(auth);
 }
 
-export function subscribeToAuthState(callback: (user: User | null) => void): () => void {
+export function subscribeToAuthState(
+  callback: (user: User | null, isAdmin: boolean) => void
+): () => void {
   if (!auth) {
-    callback(null);
+    callback(null, false);
     return () => {};
   }
-  return onAuthStateChanged(auth, callback);
+  return onAuthStateChanged(auth, async (user) => {
+    if (user && !user.isAnonymous) {
+      const isAdmin = await verifyUserAdminClaim(user);
+      callback(user, isAdmin);
+    } else {
+      cachedAdminStatus = false;
+      callback(null, false);
+    }
+  });
 }
 
 // Track Anonymous Visitor Analytics Events
@@ -204,9 +243,9 @@ export async function saveSearchLogToFirestore(
   }
 }
 
-// Helper: Check whether caller is an authenticated, non-anonymous administrator
+// Helper: Check whether caller is an authorized administrator with verified custom claims
 export function isAdminAuthenticated(): boolean {
-  return !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
+  return isCachedAdmin();
 }
 
 // Real-Time Listener for Admin Panel: Feedback (strictly requires non-anonymous admin)
