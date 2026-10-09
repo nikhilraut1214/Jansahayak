@@ -13,7 +13,15 @@ import {
   Firestore,
   serverTimestamp
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously, Auth } from 'firebase/auth';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged, 
+  User, 
+  Auth 
+} from 'firebase/auth';
 import { getAnalytics, logEvent, Analytics, isSupported } from 'firebase/analytics';
 import firebaseConfigRaw from '../../firebase-applet-config.json';
 
@@ -25,13 +33,13 @@ let isAnonymousAuthStarted = false;
 
 try {
   const config = {
-    apiKey: firebaseConfigRaw.apiKey,
-    authDomain: firebaseConfigRaw.authDomain,
-    projectId: firebaseConfigRaw.projectId,
-    storageBucket: firebaseConfigRaw.storageBucket,
-    messagingSenderId: firebaseConfigRaw.messagingSenderId,
-    appId: firebaseConfigRaw.appId,
-    measurementId: firebaseConfigRaw.measurementId || undefined
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigRaw.apiKey,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigRaw.authDomain,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigRaw.projectId,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigRaw.storageBucket,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigRaw.messagingSenderId,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigRaw.appId,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigRaw.measurementId || undefined
   };
 
   if (!getApps().length) {
@@ -41,8 +49,9 @@ try {
   }
 
   // Use specific Firestore database ID if provided
-  if (firebaseConfigRaw.firestoreDatabaseId) {
-    db = getFirestore(app, firebaseConfigRaw.firestoreDatabaseId);
+  const firestoreDbId = import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigRaw.firestoreDatabaseId;
+  if (firestoreDbId) {
+    db = getFirestore(app, firestoreDbId);
   } else {
     db = getFirestore(app);
   }
@@ -79,6 +88,26 @@ export async function ensureSilentAuth(): Promise<boolean> {
   } finally {
     isAnonymousAuthStarted = false;
   }
+}
+
+// Administrator Firebase Authentication helpers
+export async function adminSignIn(email: string, password: string): Promise<User> {
+  if (!auth) throw new Error('Firebase Authentication is not initialized');
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
+}
+
+export async function adminSignOut(): Promise<void> {
+  if (!auth) return;
+  await signOut(auth);
+}
+
+export function subscribeToAuthState(callback: (user: User | null) => void): () => void {
+  if (!auth) {
+    callback(null);
+    return () => {};
+  }
+  return onAuthStateChanged(auth, callback);
 }
 
 // Track Anonymous Visitor Analytics Events
@@ -175,16 +204,20 @@ export async function saveSearchLogToFirestore(
   }
 }
 
-// Real-Time Listener for Admin Panel: Feedback
+// Helper: Check whether caller is an authenticated, non-anonymous administrator
+export function isAdminAuthenticated(): boolean {
+  return !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
+}
+
+// Real-Time Listener for Admin Panel: Feedback (strictly requires non-anonymous admin)
 export function subscribeToFeedback(
   callback: (feedbacks: any[]) => void
 ): () => void {
-  if (!db) {
+  if (!db || !isAdminAuthenticated()) {
     callback([]);
     return () => {};
   }
 
-  ensureSilentAuth();
   const fbQuery = query(collection(db, 'feedback'), orderBy('createdAt', 'desc'), limit(100));
   
   const unsubscribe = onSnapshot(
@@ -201,16 +234,15 @@ export function subscribeToFeedback(
   return unsubscribe;
 }
 
-// Real-Time Listener for Admin Panel: Search Logs
+// Real-Time Listener for Admin Panel: Search Logs (strictly requires non-anonymous admin)
 export function subscribeToSearchLogs(
   callback: (logs: any[]) => void
 ): () => void {
-  if (!db) {
+  if (!db || !isAdminAuthenticated()) {
     callback([]);
     return () => {};
   }
 
-  ensureSilentAuth();
   const logsQuery = query(collection(db, 'search_logs'), orderBy('createdAt', 'desc'), limit(50));
   
   const unsubscribe = onSnapshot(
@@ -227,16 +259,15 @@ export function subscribeToSearchLogs(
   return unsubscribe;
 }
 
-// Real-Time Listener for Admin Panel: Analytics Events
+// Real-Time Listener for Admin Panel: Analytics Events (strictly requires non-anonymous admin)
 export function subscribeToAnalyticsEvents(
   callback: (events: any[]) => void
 ): () => void {
-  if (!db) {
+  if (!db || !isAdminAuthenticated()) {
     callback([]);
     return () => {};
   }
 
-  ensureSilentAuth();
   const eventsQuery = query(collection(db, 'analytics_events'), orderBy('createdAt', 'desc'), limit(100));
 
   const unsubscribe = onSnapshot(
@@ -253,11 +284,10 @@ export function subscribeToAnalyticsEvents(
   return unsubscribe;
 }
 
-// Admin deletion helper for feedback
+// Admin deletion helper for feedback (strictly requires non-anonymous admin)
 export async function deleteFeedbackFromFirestore(docId: string): Promise<boolean> {
-  if (!db) return false;
+  if (!db || !isAdminAuthenticated()) return false;
   try {
-    await ensureSilentAuth();
     await deleteDoc(doc(db, 'feedback', docId));
     return true;
   } catch (err) {
@@ -266,11 +296,10 @@ export async function deleteFeedbackFromFirestore(docId: string): Promise<boolea
   }
 }
 
-// Admin deletion helper for search log
+// Admin deletion helper for search log (strictly requires non-anonymous admin)
 export async function deleteSearchLogFromFirestore(docId: string): Promise<boolean> {
-  if (!db) return false;
+  if (!db || !isAdminAuthenticated()) return false;
   try {
-    await ensureSilentAuth();
     await deleteDoc(doc(db, 'search_logs', docId));
     return true;
   } catch (err) {

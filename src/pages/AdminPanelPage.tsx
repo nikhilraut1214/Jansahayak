@@ -1,6 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { User as FirebaseUser } from 'firebase/auth';
 import { useApp } from '../context/AppContext';
 import { Scheme, SchemeCategory } from '../types';
+import { 
+  adminSignIn, 
+  adminSignOut, 
+  subscribeToAuthState 
+} from '../lib/firebase';
 import { 
   BarChart, 
   Bar, 
@@ -15,10 +21,10 @@ import {
 import { 
   ShieldCheck, 
   Lock, 
-  User,
-  Eye,
-  EyeOff,
-  KeyRound,
+  User, 
+  Eye, 
+  EyeOff, 
+  KeyRound, 
   Plus, 
   Trash2, 
   Edit3, 
@@ -27,15 +33,16 @@ import {
   Layers, 
   BarChart2, 
   X, 
-  LogOut,
-  Activity,
-  RefreshCw,
-  Sparkles,
-  Star,
-  Clock,
-  Zap,
-  TrendingUp,
-  Filter
+  LogOut, 
+  Activity, 
+  RefreshCw, 
+  Sparkles, 
+  Star, 
+  Clock, 
+  Zap, 
+  TrendingUp, 
+  Filter,
+  Mail
 } from 'lucide-react';
 
 export const AdminPanelPage: React.FC = () => {
@@ -57,9 +64,11 @@ export const AdminPanelPage: React.FC = () => {
     t 
   } = useApp();
 
-  const [usernameInput, setUsernameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [adminUser, setAdminUser] = useState<FirebaseUser | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeAdminTab, setActiveAdminTab] = useState<'analytics' | 'schemes' | 'searches' | 'feedback'>('analytics');
 
@@ -92,6 +101,20 @@ export const AdminPanelPage: React.FC = () => {
   const [formApplyLink, setFormApplyLink] = useState('');
   const [formHelpline, setFormHelpline] = useState('');
 
+  // Listen to Firebase Auth state for authenticated administrator session
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthState((user) => {
+      if (user && !user.isAnonymous) {
+        setAdminUser(user);
+        setIsAuthenticated(true);
+      } else {
+        setAdminUser(null);
+        setIsAuthenticated(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Pulse effect on log or feedback change
   useEffect(() => {
     setLastSyncTime(new Date().toLocaleTimeString());
@@ -100,13 +123,52 @@ export const AdminPanelPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchLogs, feedbackList, schemes]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (usernameInput.trim() === 'nikhilraut1214' && passwordInput === 'Nikhil@123') {
+    if (!emailInput.trim() || !passwordInput) {
+      addToast('Please enter both email and password.', 'warning');
+      return;
+    }
+
+    setIsAuthenticating(true);
+    try {
+      const user = await adminSignIn(emailInput.trim(), passwordInput);
+      setAdminUser(user);
       setIsAuthenticated(true);
-      addToast('Logged into Admin Portal as Administrator', 'success');
-    } else {
-      addToast(t('wrongCredentials') || 'Incorrect username or password. Demo credentials: nikhilraut1214 / Nikhil@123', 'error');
+      addToast(`Logged in as Administrator (${user.email || 'Admin'})`, 'success');
+    } catch (err: any) {
+      console.error('Admin authentication error:', err);
+      let errorMsg = 'Authentication failed. Please verify your administrator credentials.';
+      if (
+        err?.code === 'auth/invalid-credential' || 
+        err?.code === 'auth/wrong-password' || 
+        err?.code === 'auth/user-not-found' ||
+        err?.code === 'auth/invalid-email'
+      ) {
+        errorMsg = 'Invalid email or password.';
+      } else if (err?.code === 'auth/user-disabled') {
+        errorMsg = 'This administrator account has been disabled.';
+      } else if (err?.code === 'auth/too-many-requests') {
+        errorMsg = 'Access temporarily disabled due to multiple failed attempts. Try again later.';
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        errorMsg = 'Email/Password sign-in provider is not enabled in Firebase Console.';
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+      addToast(errorMsg, 'error');
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await adminSignOut();
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      addToast('Logged out of Admin Portal.', 'info');
+    } catch (err) {
+      console.error('Logout error:', err);
     }
   };
 
@@ -328,25 +390,26 @@ export const AdminPanelPage: React.FC = () => {
             {t('adminPanel')}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Enter administrator credentials to manage government schemes dataset and view real-time audit logs.
+            Sign in with your administrator credentials to manage the schemes dataset and access real-time telemetry.
           </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {/* Username Field */}
+          {/* Administrator Email Field */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('adminUsernameLabel') || 'Username'}</span>
+              <Mail className="w-3.5 h-3.5 text-slate-400" />
+              <span>Administrator Email</span>
             </label>
             <div className="relative">
               <input
-                type="text"
+                type="email"
                 required
-                value={usernameInput}
-                onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="nikhilraut1214"
-                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="admin@jansahayak.gov.in"
+                disabled={isAuthenticating}
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all disabled:opacity-50"
               />
             </div>
           </div>
@@ -355,7 +418,7 @@ export const AdminPanelPage: React.FC = () => {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('adminPasswordLabel') || 'Password'}</span>
+              <span>Password</span>
             </label>
             <div className="relative">
               <input
@@ -363,8 +426,9 @@ export const AdminPanelPage: React.FC = () => {
                 required
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Nikhil@123"
-                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl pl-4 pr-11 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                placeholder="Enter administrator password"
+                disabled={isAuthenticating}
+                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl pl-4 pr-11 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all disabled:opacity-50"
               />
               <button
                 type="button"
@@ -379,19 +443,21 @@ export const AdminPanelPage: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 mt-2"
+            disabled={isAuthenticating}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 cursor-pointer"
           >
             <Lock className="w-4 h-4" />
-            <span>Login to Admin Panel</span>
+            <span>{isAuthenticating ? 'Authenticating...' : 'Sign In as Administrator'}</span>
           </button>
         </form>
 
-        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-center space-y-1">
-          <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
-            Demo Access Credentials
-          </p>
-          <p className="text-[11px] text-amber-800 dark:text-amber-300 font-mono">
-            Username: <strong className="text-amber-950 dark:text-amber-100 underline">nikhilraut1214</strong> &nbsp;|&nbsp; Password: <strong className="text-amber-950 dark:text-amber-100 underline">Nikhil@123</strong>
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-left space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Administrator Security Architecture</span>
+          </div>
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+            Admin access is authenticated through Firebase Authentication. Administrator accounts must be registered in your Firebase Console project. Client-side authentication bypasses and hardcoded credentials are not permitted.
           </p>
         </div>
       </div>
@@ -450,12 +516,20 @@ export const AdminPanelPage: React.FC = () => {
             <span>+ Test Live Feedback</span>
           </button>
 
+          {adminUser?.email && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-mono font-bold text-emerald-800 dark:text-emerald-300">
+              <User className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{adminUser.email}</span>
+            </div>
+          )}
+
           <button
-            onClick={() => setIsAuthenticated(false)}
+            onClick={handleLogout}
             className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5"
+            title="Sign out of Admin Portal"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Lock Admin</span>
+            <span>Sign Out</span>
           </button>
         </div>
       </div>

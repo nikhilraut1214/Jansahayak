@@ -1,7 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Feedback collection: Anonymous visitors can create feedback, but cannot read, update, or delete
+    // Helper function to verify caller is an authenticated, non-anonymous administrator.
+    // Anonymous visitors have request.auth.token.firebase.sign_in_provider == 'anonymous'.
+    function isNonAnonymousAdmin() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Feedback collection:
+    // Anonymous visitors can submit feedback (validated schema).
+    // Reading, listing, or deleting feedback is strictly restricted to authenticated administrators.
     match /feedback/{feedbackId} {
       allow create: if request.resource.data.keys().hasAll(['rating', 'message'])
                    && request.resource.data.rating is number
@@ -9,23 +17,27 @@ service cloud.firestore {
                    && request.resource.data.rating <= 5
                    && request.resource.data.message is string
                    && request.resource.data.message.size() <= 2000;
-      allow read, delete: if request.auth != null;
+      allow read, delete: if isNonAnonymousAdmin();
       allow update: if false;
     }
 
-    // Analytics Events: Anonymous visitors can create events
+    // Analytics Events:
+    // Anonymous visitors can record telemetry events.
+    // Reading is strictly restricted to authenticated administrators.
     match /analytics_events/{eventId} {
       allow create: if request.resource.data.keys().hasAll(['eventName'])
                    && request.resource.data.eventName is string;
-      allow read, delete: if request.auth != null;
+      allow read, delete: if isNonAnonymousAdmin();
       allow update: if false;
     }
 
-    // Search Logs: Anonymous search query logging
+    // Search Logs:
+    // Anonymous visitors can log search queries.
+    // Reading and deleting is strictly restricted to authenticated administrators.
     match /search_logs/{logId} {
       allow create: if request.resource.data.keys().hasAll(['query'])
                    && request.resource.data.query is string;
-      allow read, delete: if request.auth != null;
+      allow read, delete: if isNonAnonymousAdmin();
       allow update: if false;
     }
   }

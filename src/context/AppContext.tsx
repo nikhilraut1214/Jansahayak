@@ -20,7 +20,8 @@ import {
   subscribeToFeedback, 
   subscribeToSearchLogs, 
   deleteFeedbackFromFirestore, 
-  deleteSearchLogFromFirestore 
+  deleteSearchLogFromFirestore,
+  subscribeToAuthState 
 } from '../lib/firebase';
 
 interface ToastMessage {
@@ -46,6 +47,7 @@ interface AppContextType {
   savedSchemeIds: string[];
   toggleSaveScheme: (schemeId: string) => void;
   isSchemeSaved: (schemeId: string) => boolean;
+  clearSavedSchemes: () => void;
   
   compareSchemeIds: string[];
   toggleCompareScheme: (schemeId: string) => void;
@@ -187,13 +189,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [compareSchemeIds, setCompareSchemeIds] = useState<string[]>([]);
   
   const [userProfile, setUserProfile] = useState<UserEligibilityProfile>(() => {
-    const savedProf = localStorage.getItem('jansahayak_user_profile');
-    return savedProf ? JSON.parse(savedProf) : DEFAULT_PROFILE;
+    try {
+      const sessionProf = sessionStorage.getItem('jansahayak_user_profile');
+      if (sessionProf) return JSON.parse(sessionProf);
+      // Clean up any legacy sensitive profile data stored in localStorage by previous versions
+      localStorage.removeItem('jansahayak_user_profile');
+    } catch (e) {
+      // Non-blocking in restricted storage environments
+    }
+    return DEFAULT_PROFILE;
   });
   
   const [userDocuments, setUserDocuments] = useState<UserDocumentState>(() => {
-    const savedDocs = localStorage.getItem('jansahayak_user_docs');
-    return savedDocs ? JSON.parse(savedDocs) : DEFAULT_DOCUMENTS;
+    try {
+      const sessionDocs = sessionStorage.getItem('jansahayak_user_docs');
+      if (sessionDocs) return JSON.parse(sessionDocs);
+      // Clean up any legacy sensitive documents checklist stored in localStorage
+      localStorage.removeItem('jansahayak_user_docs');
+    } catch (e) {
+      // Non-blocking in restricted storage environments
+    }
+    return DEFAULT_DOCUMENTS;
   });
   
   const [feedbackList, setFeedbackList] = useState<FeedbackSubmission[]>(() => {
@@ -285,11 +301,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [themeMode]);
 
   useEffect(() => {
-    localStorage.setItem('jansahayak_user_profile', JSON.stringify(userProfile));
+    try {
+      sessionStorage.setItem('jansahayak_user_profile', JSON.stringify(userProfile));
+    } catch (e) {
+      // Non-blocking in restricted storage environments
+    }
   }, [userProfile]);
 
   useEffect(() => {
-    localStorage.setItem('jansahayak_user_docs', JSON.stringify(userDocuments));
+    try {
+      sessionStorage.setItem('jansahayak_user_docs', JSON.stringify(userDocuments));
+    } catch (e) {
+      // Non-blocking in restricted storage environments
+    }
   }, [userDocuments]);
 
   useEffect(() => {
@@ -314,28 +338,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cross-tab & Real-Time Firestore Sync Listener
   useEffect(() => {
-    // 1. Subscribe to Firestore Real-Time Feedback Stream
-    const unsubscribeFeedback = subscribeToFeedback((remoteFeedbacks) => {
-      if (remoteFeedbacks && remoteFeedbacks.length > 0) {
-        setFeedbackList((prevLocal) => {
-          // Merge remote items, preserving local additions
-          const combinedMap = new Map();
-          prevLocal.forEach((item) => combinedMap.set(item.id, item));
-          remoteFeedbacks.forEach((item) => combinedMap.set(item.id, item));
-          return Array.from(combinedMap.values());
-        });
-      }
-    });
+    let unsubscribeFeedback = () => {};
+    let unsubscribeLogs = () => {};
 
-    // 2. Subscribe to Firestore Real-Time Search Query Logs
-    const unsubscribeLogs = subscribeToSearchLogs((remoteLogs) => {
-      if (remoteLogs && remoteLogs.length > 0) {
-        setSearchLogs((prevLocal) => {
-          const combinedMap = new Map();
-          prevLocal.forEach((item) => combinedMap.set(item.id, item));
-          remoteLogs.forEach((item) => combinedMap.set(item.id, item));
-          return Array.from(combinedMap.values()).slice(0, 50);
+    // Only subscribe to administrative Firestore streams if an authenticated admin is logged in
+    const unsubscribeAuth = subscribeToAuthState((user) => {
+      if (user && !user.isAnonymous) {
+        unsubscribeFeedback = subscribeToFeedback((remoteFeedbacks) => {
+          if (remoteFeedbacks && remoteFeedbacks.length > 0) {
+            setFeedbackList((prevLocal) => {
+              const combinedMap = new Map();
+              prevLocal.forEach((item) => combinedMap.set(item.id, item));
+              remoteFeedbacks.forEach((item) => combinedMap.set(item.id, item));
+              return Array.from(combinedMap.values());
+            });
+          }
         });
+
+        unsubscribeLogs = subscribeToSearchLogs((remoteLogs) => {
+          if (remoteLogs && remoteLogs.length > 0) {
+            setSearchLogs((prevLocal) => {
+              const combinedMap = new Map();
+              prevLocal.forEach((item) => combinedMap.set(item.id, item));
+              remoteLogs.forEach((item) => combinedMap.set(item.id, item));
+              return Array.from(combinedMap.values()).slice(0, 50);
+            });
+          }
+        });
+      } else {
+        unsubscribeFeedback();
+        unsubscribeLogs();
       }
     });
 
@@ -369,6 +401,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('jansahayak_data_updated', handleCustomSync);
     return () => {
+      unsubscribeAuth();
       unsubscribeFeedback();
       unsubscribeLogs();
       window.removeEventListener('storage', handleStorageChange);
@@ -414,6 +447,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const isSchemeSaved = (schemeId: string) => savedSchemeIds.includes(schemeId);
+
+  const clearSavedSchemes = () => {
+    setSavedSchemeIds([]);
+    localStorage.setItem('jansahayak_saved_schemes', JSON.stringify([]));
+    addToast('Saved schemes cleared', 'info');
+  };
 
   const toggleCompareScheme = (schemeId: string) => {
     if (compareSchemeIds.includes(schemeId)) {
@@ -552,6 +591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         savedSchemeIds,
         toggleSaveScheme,
         isSchemeSaved,
+        clearSavedSchemes,
         compareSchemeIds,
         toggleCompareScheme,
         clearCompare,
