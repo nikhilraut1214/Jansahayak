@@ -7,6 +7,7 @@ import {
   adminSignOut, 
   subscribeToAuthState 
 } from '../lib/firebase';
+import { isValidHttpUrl } from '../utils/urlSecurity';
 import { 
   BarChart, 
   Bar, 
@@ -174,6 +175,7 @@ export const AdminPanelPage: React.FC = () => {
     try {
       await adminSignOut();
       setIsAuthenticated(false);
+      setIsAdminAuthorized(false);
       setAdminUser(null);
       addToast('Logged out of Admin Portal.', 'info');
     } catch (err) {
@@ -348,6 +350,16 @@ export const AdminPanelPage: React.FC = () => {
     e.preventDefault();
     if (!formName.trim() || !formMinistry.trim()) {
       addToast('Please enter scheme name and ministry.', 'warning');
+      return;
+    }
+
+    if (formWebsite.trim() && !isValidHttpUrl(formWebsite)) {
+      addToast('Official Website must be a valid http:// or https:// URL.', 'error');
+      return;
+    }
+
+    if (formApplyLink.trim() && !isValidHttpUrl(formApplyLink)) {
+      addToast('Application Link must be a valid http:// or https:// URL.', 'error');
       return;
     }
 

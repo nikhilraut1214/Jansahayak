@@ -212,37 +212,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return DEFAULT_DOCUMENTS;
   });
   
+  // In-memory state for citizen feedback and search audit telemetry (not persisted to unencrypted localStorage)
   const [feedbackList, setFeedbackList] = useState<FeedbackSubmission[]>(() => {
-    const savedFb = localStorage.getItem('jansahayak_feedback');
-    return savedFb ? JSON.parse(savedFb) : [
-      {
-        id: 'fb-1',
-        name: 'Rajesh Kumar',
-        email: 'rajesh.k@example.com',
-        category: 'Eligibility Wizard',
-        message: 'The wizard was extremely easy to follow! Found PM-KISAN and KCC details in seconds.',
-        rating: 5,
-        timestamp: new Date().toLocaleDateString()
-      },
-      {
-        id: 'fb-2',
-        name: 'Priya Sharma',
-        email: 'priya.s@example.com',
-        category: 'Document Vault',
-        message: 'Loved the document checklist. Very helpful for Sukanya Samriddhi application.',
-        rating: 5,
-        timestamp: new Date().toLocaleDateString()
-      }
-    ];
+    try {
+      localStorage.removeItem('jansahayak_feedback');
+    } catch {}
+    return [];
   });
   
   const [searchLogs, setSearchLogs] = useState<SearchLog[]>(() => {
-    const savedLogs = localStorage.getItem('jansahayak_search_logs');
-    return savedLogs ? JSON.parse(savedLogs) : [
-      { id: 'log-1', query: 'farmer income', resultsCount: 6, timestamp: 'Today 10:15 AM' },
-      { id: 'log-2', query: 'health cover', resultsCount: 4, timestamp: 'Today 11:30 AM' },
-      { id: 'log-3', query: 'girl child scholarship', resultsCount: 5, timestamp: 'Today 12:45 PM' }
-    ];
+    try {
+      localStorage.removeItem('jansahayak_search_logs');
+    } catch {}
+    return [];
   });
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
@@ -325,14 +307,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [schemes]);
 
   useEffect(() => {
-    localStorage.setItem('jansahayak_feedback', JSON.stringify(feedbackList));
-  }, [feedbackList]);
-
-  useEffect(() => {
-    localStorage.setItem('jansahayak_search_logs', JSON.stringify(searchLogs));
-  }, [searchLogs]);
-
-  useEffect(() => {
     localStorage.setItem('jansahayak_recent_searches', JSON.stringify(recentSearches));
   }, [recentSearches]);
 
@@ -368,30 +342,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         unsubscribeFeedback();
         unsubscribeLogs();
+        // Clear in-memory administrative records and purge cached keys upon logout or loss of admin claims
+        setFeedbackList([]);
+        setSearchLogs([]);
+        try {
+          localStorage.removeItem('jansahayak_feedback');
+          localStorage.removeItem('jansahayak_search_logs');
+        } catch {}
       }
     });
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'jansahayak_search_logs' && e.newValue) {
-        try { setSearchLogs(JSON.parse(e.newValue)); } catch (err) {}
-      }
-      if (e.key === 'jansahayak_feedback' && e.newValue) {
-        try { setFeedbackList(JSON.parse(e.newValue)); } catch (err) {}
-      }
       if (e.key === 'jansahayak_custom_schemes' && e.newValue) {
         try { setSchemes(JSON.parse(e.newValue)); } catch (err) {}
       }
     };
 
     const handleCustomSync = () => {
-      const savedLogs = localStorage.getItem('jansahayak_search_logs');
-      if (savedLogs) {
-        try { setSearchLogs(JSON.parse(savedLogs)); } catch (err) {}
-      }
-      const savedFb = localStorage.getItem('jansahayak_feedback');
-      if (savedFb) {
-        try { setFeedbackList(JSON.parse(savedFb)); } catch (err) {}
-      }
       const savedSchemes = localStorage.getItem('jansahayak_custom_schemes');
       if (savedSchemes) {
         try { setSchemes(JSON.parse(savedSchemes)); } catch (err) {}
@@ -487,7 +454,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     const updated = [newFb, ...feedbackList];
     setFeedbackList(updated);
-    localStorage.setItem('jansahayak_feedback', JSON.stringify(updated));
     window.dispatchEvent(new Event('jansahayak_data_updated'));
     
     // Save to Firestore asynchronously
@@ -498,7 +464,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteFeedbackSubmission = (id: string) => {
     const updated = feedbackList.filter((f) => f.id !== id);
     setFeedbackList(updated);
-    localStorage.setItem('jansahayak_feedback', JSON.stringify(updated));
     window.dispatchEvent(new Event('jansahayak_data_updated'));
     
     // Delete from Firestore asynchronously
@@ -508,9 +473,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearAllFeedback = () => {
     setFeedbackList([]);
-    localStorage.removeItem('jansahayak_feedback');
+    try {
+      localStorage.removeItem('jansahayak_feedback');
+    } catch {}
     window.dispatchEvent(new Event('jansahayak_data_updated'));
-    addToast('All feedback records cleared.', 'info');
+    addToast('All feedback records cleared from session.', 'info');
   };
 
   const logSearchQuery = (query: string, resultsCount: number, categoryFilter?: string) => {
@@ -525,7 +492,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     const updated = [newLog, ...searchLogs.slice(0, 49)];
     setSearchLogs(updated);
-    localStorage.setItem('jansahayak_search_logs', JSON.stringify(updated));
     window.dispatchEvent(new Event('jansahayak_data_updated'));
 
     // Save to Firestore asynchronously
@@ -534,15 +500,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearSearchLogs = () => {
     setSearchLogs([]);
-    localStorage.removeItem('jansahayak_search_logs');
+    try {
+      localStorage.removeItem('jansahayak_search_logs');
+    } catch {}
     window.dispatchEvent(new Event('jansahayak_data_updated'));
-    addToast('Search query audit log cleared.', 'info');
+    addToast('Search query audit log cleared from session.', 'info');
   };
 
   const deleteSearchLog = (id: string) => {
     const updated = searchLogs.filter((l) => l.id !== id);
     setSearchLogs(updated);
-    localStorage.setItem('jansahayak_search_logs', JSON.stringify(updated));
     window.dispatchEvent(new Event('jansahayak_data_updated'));
 
     // Delete from Firestore asynchronously

@@ -127,6 +127,14 @@ export async function adminSignIn(
 
 export async function adminSignOut(): Promise<void> {
   cachedAdminStatus = false;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.removeItem('jansahayak_feedback');
+      localStorage.removeItem('jansahayak_search_logs');
+    } catch {
+      // Ignore localStorage exceptions in restricted contexts
+    }
+  }
   if (!auth) return;
   await signOut(auth);
 }

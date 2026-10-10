@@ -5,6 +5,7 @@ import { CATEGORY_NAMES } from '../utils/schemeLocalizer';
 import { useApp } from '../context/AppContext';
 import { evaluateSchemeEligibility } from '../utils/eligibilityEngine';
 import { generateSchemePDF } from '../utils/pdfGenerator';
+import { sanitizeSafeUrl } from '../utils/urlSecurity';
 import { 
   X, 
   CheckCircle2, 
@@ -251,17 +252,23 @@ export const SchemeDetailModal: React.FC<SchemeDetailModalProps> = ({ scheme, on
               <div className="text-xs space-y-1">
                 <p className="font-bold">Official Rate / Figure Advisory:</p>
                 <p className="leading-relaxed">{scheme.notes}</p>
-                <div className="pt-1">
-                  <a
-                    href={scheme.official_website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400 underline hover:text-amber-800"
-                  >
-                    <span>{t('verifyOnSite')}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
+                {(() => {
+                  const safeWebsite = sanitizeSafeUrl(scheme.official_website, '');
+                  if (!safeWebsite) return null;
+                  return (
+                    <div className="pt-1">
+                      <a
+                        href={safeWebsite}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400 underline hover:text-amber-800"
+                      >
+                        <span>{t('verifyOnSite')}</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -502,7 +509,7 @@ export const SchemeDetailModal: React.FC<SchemeDetailModalProps> = ({ scheme, on
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Official Source:</span>
               <a
-                href={scheme.source_url}
+                href={sanitizeSafeUrl(scheme.source_url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-emerald-700 dark:text-emerald-400 font-bold underline hover:text-emerald-800 truncate max-w-[200px]"
@@ -538,7 +545,7 @@ export const SchemeDetailModal: React.FC<SchemeDetailModalProps> = ({ scheme, on
             </button>
 
             <a
-              href={scheme.official_website}
+              href={sanitizeSafeUrl(scheme.official_website)}
               target="_blank"
               rel="noopener noreferrer"
               className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-100 flex items-center gap-1.5"
@@ -548,7 +555,7 @@ export const SchemeDetailModal: React.FC<SchemeDetailModalProps> = ({ scheme, on
             </a>
 
             <a
-              href={scheme.apply_link}
+              href={sanitizeSafeUrl(scheme.apply_link)}
               target="_blank"
               rel="noopener noreferrer"
               className="px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md flex items-center gap-1.5"

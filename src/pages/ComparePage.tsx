@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { CATEGORY_THEMES } from '../utils/categoryColors';
 import { CATEGORY_NAMES } from '../utils/schemeLocalizer';
+import { sanitizeSafeUrl } from '../utils/urlSecurity';
 import { BarChart2, X, Plus, ExternalLink, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 export const ComparePage: React.FC = () => {
@@ -224,7 +225,7 @@ export const ComparePage: React.FC = () => {
                       {t('viewDetails')}
                     </button>
                     <a
-                      href={s.apply_link}
+                      href={sanitizeSafeUrl(s.apply_link)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs hover:bg-slate-100 flex items-center justify-center gap-1"
